@@ -18,8 +18,45 @@ const products = [
   { code: "HD890", name: "Tranh Tròn Quan Âm Ngự Mây ÁNH SÁNG NỔI", desc: "Quan Âm Bồ Tát ngự trên mây lành, toát lên vẻ từ bi, thanh tịnh và hướng tâm về bình an.", suitable: "Bàn thờ Quan Âm, phòng thờ", sizes: "Theo kích thước bàn thờ thực tế" }
 ];
 
+// Bảng gợi ý được đối chiếu từ tài liệu tư vấn của DecorNow.
+const QUIZ_RECOMMENDATIONS = {
+  quan_am: {
+    small: [["HD890", "D30 / D40"], ["HD868", "D30"], ["TC6", "D40"]],
+    medium: [["HD890", "D40 / D50"], ["TC90", "60×40 / 70×50cm"], ["HD868", "D50"]],
+    large: [["TC90", "90×60 / 100×50cm"], ["HD890", "D60"], ["HD888", "90×60cm"]],
+    grand: [["TC111", "108×67cm"], ["TC90", "100×50cm"], ["HD890", "D60"]]
+  },
+  phat: {
+    small: [["TC51", "D30 / D40"], ["TC184", "D30"], ["TC209", "60×40cm"]],
+    medium: [["TC209", "60×40 / 70×50cm"], ["TC51", "D40 / D50"], ["HD888", "70×50cm"]],
+    large: [["TC209", "90×60 / 100×50cm"], ["HD888", "90×60 / 100×50cm"], ["TC51", "D60"]],
+    grand: [["TC209", "108×67cm"], ["TC111", "100×50cm"], ["TC98", "90×60cm"]]
+  },
+  no_statue: {
+    small: [["TC6", "D30 / D40"], ["HD888", "60×40cm"], ["TC184", "D30"]],
+    medium: [["HD888", "60×40 / 70×50cm"], ["TC184", "D40 / D50"], ["TC6", "D40"]],
+    large: [["HD888", "90×60 / 100×50cm"], ["TC90", "90×60cm"], ["TC184", "D60"]],
+    grand: [["TC209", "100×50 / 108×67cm"], ["HD888", "100×50cm"], ["TC90", "90×60cm"]]
+  }
+};
+
+const SIZE_TIERS = {
+  "41x61cm": "small", "67x53cm": "small",
+  "48x81cm": "medium", "48x88cm": "medium",
+  "61x107cm": "large", "61x127cm": "large",
+  "81x175cm": "grand"
+};
+
+const ALTAR_ALLOWED_TIERS = {
+  "Bàn thờ treo": ["small", "medium"],
+  "Tủ thờ truyền thống": ["large", "grand"],
+  "Bàn thờ dáng đứng": ["large", "grand"],
+  "Bàn thờ Nhị cấp/Tam cấp": ["large"]
+};
+
 const quizState = { worship_type: "", altar_type: "", altar_size: "" };
 let currentProduct = null;
+let currentRecommendations = [];
 let scrollDepthTracked = false;
 
 // Gửi sự kiện tới các nền tảng có sẵn; local sẽ log để kiểm thử.
@@ -160,6 +197,8 @@ function openModal(product = null, title = "Nhận tư vấn chọn tranh") {
   const modal = document.getElementById("product-modal");
   if (!modal) return;
   currentProduct = product;
+  modal.classList.toggle("is-product", Boolean(product));
+  modal.classList.toggle("is-consult", !product);
   document.getElementById("modal-title").textContent = product?.name || title;
   document.getElementById("modal-code").textContent = product ? `Mã sản phẩm: ${product.code}` : "Tư vấn DecorNow";
   document.getElementById("modal-desc").textContent = product?.desc || "DecorNow gợi ý mẫu phù hợp với không gian thờ của anh/chị.";
@@ -181,8 +220,91 @@ function closeModal() {
   const modal = document.getElementById("product-modal");
   if (!modal) return;
   modal.classList.remove("is-open");
+  modal.classList.remove("is-product", "is-consult");
   modal.setAttribute("aria-hidden", "true");
   document.documentElement.style.overflow = "";
+}
+
+function getWorshipGroup(value) {
+  if (value === "Quan Thế Âm") return "quan_am";
+  if (value === "Chưa có tượng Phật") return "no_statue";
+  return ["Phật Thích Ca", "A Di Đà", "Tây Phương Tam Thánh"].includes(value) ? "phat" : "";
+}
+
+function setQuizMessage(message = "", type = "") {
+  const element = document.getElementById("quiz-message");
+  if (!element) return;
+  element.textContent = message;
+  element.className = `dcn-quiz__message${type ? ` is-${type}` : ""}`;
+}
+
+function closeQuizResultsModal() {
+  const modal = document.getElementById("quiz-result-modal");
+  if (!modal) return;
+  modal.classList.remove("is-open");
+  modal.setAttribute("aria-hidden", "true");
+  document.documentElement.style.overflow = "";
+}
+
+// Chỉ cho phép chọn kích thước có trong bảng tư vấn của loại bàn thờ.
+function updateAllowedSizes() {
+  const allowed = ALTAR_ALLOWED_TIERS[quizState.altar_type] || Object.values(SIZE_TIERS);
+  document.querySelectorAll('input[name="quiz_size"]').forEach(input => {
+    const disabled = !allowed.includes(SIZE_TIERS[input.value]);
+    input.disabled = disabled;
+    input.closest("label")?.classList.toggle("is-disabled", disabled);
+    if (disabled && input.checked) {
+      input.checked = false;
+      quizState.altar_size = "";
+    }
+  });
+  document.getElementById("quiz-results")?.setAttribute("hidden", "");
+  if (quizState.altar_type) setQuizMessage("Các kích thước không phù hợp với loại bàn thờ đã được làm mờ.", "info");
+}
+
+function renderQuizResults() {
+  const missing = [];
+  if (!quizState.worship_type) missing.push("đang thờ ai");
+  if (!quizState.altar_type) missing.push("loại bàn thờ");
+  if (!quizState.altar_size) missing.push("kích thước bàn thờ");
+  if (missing.length) {
+    setQuizMessage(`Đạo hữu vui lòng chọn ${missing.join(", ")} trước khi nhận gợi ý.`, "error");
+    return;
+  }
+
+  const group = getWorshipGroup(quizState.worship_type);
+  const tier = SIZE_TIERS[quizState.altar_size];
+  const recommendationRows = QUIZ_RECOMMENDATIONS[group]?.[tier];
+  if (!recommendationRows) {
+    setQuizMessage("Chưa có bộ gợi ý cho lựa chọn này. Đạo hữu vui lòng chọn lại hoặc liên hệ DecorNow.", "error");
+    return;
+  }
+
+  currentRecommendations = recommendationRows.map(([code, suggestedSize], index) => ({
+    product: products.find(item => item.code === code), suggestedSize, priority: index + 1
+  })).filter(item => item.product);
+
+  const grid = document.getElementById("quiz-result-grid");
+  const results = document.getElementById("quiz-results");
+  const summary = document.getElementById("quiz-result-summary");
+  if (!grid || !results || !summary) return;
+  summary.textContent = `${quizState.worship_type} • ${quizState.altar_type} • Bàn thờ ${quizState.altar_size}`;
+  grid.innerHTML = currentRecommendations.map(({ product, suggestedSize, priority }) => {
+    const index = products.findIndex(item => item.code === product.code);
+    return `<article class="dcn-quiz-result-card${priority === 1 ? " is-primary" : ""}"><div class="dcn-quiz-result-card__image"><img src="images/products/${product.code}.png" alt="${product.name} ${product.code}" loading="lazy"><span>${priority === 1 ? "Phù hợp nhất" : `Gợi ý ${priority}`}</span></div><div class="dcn-quiz-result-card__body"><small>${product.code}</small><h4>${product.name}</h4><p>Kích thước tranh gợi ý: <b>${suggestedSize}</b></p><button class="dcn-btn dcn-btn--gold product-trigger" type="button" data-index="${index}">Xem chi tiết & tư vấn</button></div></article>`;
+  }).join("");
+  results.hidden = false;
+  const resultModal = document.getElementById("quiz-result-modal");
+  resultModal?.classList.add("is-open");
+  resultModal?.setAttribute("aria-hidden", "false");
+  document.documentElement.style.overflow = "hidden";
+  setQuizMessage("Đã tìm thấy 3 mẫu phù hợp với lựa chọn của đạo hữu.", "success");
+  trackEvent("View_Quiz_Result", {
+    worship_type: quizState.worship_type,
+    altar_type: quizState.altar_type,
+    altar_size: quizState.altar_size,
+    product_codes: currentRecommendations.map(item => item.product.code).join(",")
+  });
 }
 
 function initInteractions() {
@@ -197,15 +319,40 @@ function initInteractions() {
     const group = question.dataset.group;
     const firstChoice = !quizState[group];
     quizState[group] = input.value;
+    currentRecommendations = [];
+    document.getElementById("quiz-results")?.setAttribute("hidden", "");
+    setQuizMessage();
+    if (group === "altar_type") updateAllowedSizes();
     if (firstChoice) trackEvent("Click_Quiz_Start", { source: group });
     trackEvent(question.dataset.event, { value: input.value });
   }));
 
   document.addEventListener("click", event => {
+    const quizResultButton = event.target.closest(".quiz-result-trigger");
+    if (quizResultButton) {
+      trackEvent("Click_Quiz_Start", { source: "quiz_cta" });
+      renderQuizResults();
+      return;
+    }
+    const quizConsultButton = event.target.closest(".quiz-consult-trigger");
+    if (quizConsultButton) {
+      const names = currentRecommendations.map(item => item.product.name).join("; ");
+      const codes = currentRecommendations.map(item => item.product.code).join(", ");
+      trackEvent("Click_Consult_Button", { source_section: "quiz_results", product_codes: codes });
+      closeQuizResultsModal();
+      openModal(null, "Tư vấn các mẫu tranh được gợi ý");
+      const form = document.querySelector(".dcn-form--modal");
+      if (form) {
+        form.elements.product_name.value = names;
+        form.elements.product_code.value = codes;
+      }
+      return;
+    }
     const productButton = event.target.closest(".product-trigger");
     if (productButton) {
       const product = products[Number(productButton.dataset.index)];
       trackEvent("View_Product", { product_name: product.name, product_code: product.code });
+      if (productButton.closest("#quiz-result-modal")) closeQuizResultsModal();
       openModal(product);
       return;
     }
@@ -219,6 +366,7 @@ function initInteractions() {
     if (event.target.closest(".track-hotline")) trackEvent("Click_Hotline", { phone: "0865898247" });
     if (event.target.closest("[data-zalo]")) trackEvent("Click_Zalo");
     if (event.target.closest("[data-close-modal]")) closeModal();
+    if (event.target.closest("[data-close-quiz-results]")) closeQuizResultsModal();
   });
 
   document.querySelectorAll("[data-lead-form]").forEach(form => form.addEventListener("submit", event => {
@@ -226,7 +374,7 @@ function initInteractions() {
     const clicked = event.submitter?.dataset.cta || "submit_form";
     submitLead(form, { source_section: form.dataset.source, clicked_cta: clicked });
   }));
-  document.addEventListener("keydown", event => { if (event.key === "Escape") closeModal(); });
+  document.addEventListener("keydown", event => { if (event.key === "Escape") { closeModal(); closeQuizResultsModal(); } });
   window.addEventListener("scroll", () => {
     const maxScroll = document.documentElement.scrollHeight - window.innerHeight;
     if (!scrollDepthTracked && maxScroll > 0 && window.scrollY / maxScroll >= .5) { scrollDepthTracked = true; trackEvent("ScrollDepth_50"); }
