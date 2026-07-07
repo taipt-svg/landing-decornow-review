@@ -141,6 +141,109 @@ function showToast(message, isError = false) {
   showToast.timer = window.setTimeout(() => toast.classList.remove("is-visible"), 4500);
 }
 
+function formatBytes(bytes) {
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)}KB`;
+  return `${(bytes / 1024 / 1024).toFixed(1)}MB`;
+}
+
+function resetUploadPreview(form) {
+  const preview = form.querySelector(".dcn-upload__preview");
+  const drop = form.querySelector(".dcn-upload__drop");
+  if (preview) preview.hidden = true;
+  if (drop) drop.hidden = false;
+  const image = preview?.querySelector("img");
+  if (image?.src.startsWith("blob:")) URL.revokeObjectURL(image.src);
+  if (image) image.removeAttribute("src");
+}
+
+function updateUploadPreview(input) {
+  const form = input.closest("form");
+  const upload = input.closest(".dcn-upload");
+  const error = upload?.querySelector(".dcn-upload__error");
+  const file = input.files?.[0];
+  if (error) error.textContent = "";
+  if (!file) { if (form) resetUploadPreview(form); return false; }
+  if (!/^image\/(jpeg|png|webp)$/.test(file.type) || file.size > 8 * 1024 * 1024) {
+    input.value = "";
+    if (error) error.textContent = "Vui lòng chọn ảnh JPG, PNG hoặc WebP có dung lượng không quá 8MB.";
+    if (form) resetUploadPreview(form);
+    return false;
+  }
+  const preview = upload?.querySelector(".dcn-upload__preview");
+  const drop = upload?.querySelector(".dcn-upload__drop");
+  const image = preview?.querySelector("img");
+  if (image) image.src = URL.createObjectURL(file);
+  const name = preview?.querySelector(".dcn-upload__name");
+  const size = preview?.querySelector(".dcn-upload__size");
+  if (name) name.textContent = file.name;
+  if (size) size.textContent = formatBytes(file.size);
+  if (preview) preview.hidden = false;
+  if (drop) drop.hidden = true;
+  trackEvent("Upload_Altar_Image", { file_type: file.type, file_size: file.size });
+  return true;
+}
+
+// Thu nhỏ ảnh trước khi đóng gói vào JSON gửi webhook.
+async function prepareAltarImage(form) {
+  const file = form.querySelector('[name="altar_image"]')?.files?.[0];
+  if (!file) return null;
+  const bitmap = typeof createImageBitmap === "function" ? await createImageBitmap(file) : await new Promise((resolve, reject) => {
+    const image = new Image();
+    const url = URL.createObjectURL(file);
+    image.onload = () => { URL.revokeObjectURL(url); resolve(image); };
+    image.onerror = () => { URL.revokeObjectURL(url); reject(new Error("Không thể đọc ảnh đã chọn.")); };
+    image.src = url;
+  });
+  const scale = Math.min(1, 1600 / Math.max(bitmap.width, bitmap.height));
+  const width = Math.max(1, Math.round(bitmap.width * scale));
+  const height = Math.max(1, Math.round(bitmap.height * scale));
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+  const context = canvas.getContext("2d");
+  context.fillStyle = "#ffffff";
+  context.fillRect(0, 0, width, height);
+  context.drawImage(bitmap, 0, 0, width, height);
+  bitmap.close?.();
+  return {
+    file_name: file.name.replace(/\.[^.]+$/, ".jpg"),
+    original_size: file.size,
+    mime_type: "image/jpeg",
+    width,
+    height,
+    data_url: canvas.toDataURL("image/jpeg", .82)
+  };
+}
+
+function initCountdown() {
+  const hours = document.getElementById("countdown-hours");
+  const minutes = document.getElementById("countdown-minutes");
+  const seconds = document.getElementById("countdown-seconds");
+  if (!hours || !minutes || !seconds) return;
+  const key = "dcn_offer_deadline";
+  let deadline = Number(localStorage.getItem(key));
+  if (!deadline || deadline <= Date.now()) {
+    deadline = Date.now() + 6 * 60 * 60 * 1000;
+    localStorage.setItem(key, String(deadline));
+  }
+  const update = () => {
+    const remaining = Math.max(0, deadline - Date.now());
+    hours.textContent = String(Math.floor(remaining / 3600000)).padStart(2, "0");
+    minutes.textContent = String(Math.floor(remaining % 3600000 / 60000)).padStart(2, "0");
+    seconds.textContent = String(Math.floor(remaining % 60000 / 1000)).padStart(2, "0");
+    if (remaining <= 0) window.clearInterval(initCountdown.timer);
+  };
+  update();
+  initCountdown.timer = window.setInterval(update, 1000);
+}
+
+function initConcerns() {
+  const first = document.querySelector(".dcn-concerns article");
+  if (!first) return;
+  first.classList.add("is-open");
+  first.querySelector(".dcn-concern__toggle")?.setAttribute("aria-expanded", "true");
+}
+
 async function submitLead(formElement, extraData = {}) {
   const phoneInput = formElement.querySelector('[name="phone"]');
   const phone = phoneInput?.value.trim() || "";
@@ -155,6 +258,8 @@ async function submitLead(formElement, extraData = {}) {
   const button = formElement.querySelector('[type="submit"]');
   if (button) { button.disabled = true; button.dataset.label = button.textContent; button.textContent = "Đang gửi..."; }
   try {
+    const altarImage = await prepareAltarImage(formElement);
+    if (altarImage) data.altar_image = altarImage;
     if (CONFIG.WEBHOOK_URL) {
       const response = await fetch(CONFIG.WEBHOOK_URL, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data) });
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
@@ -167,11 +272,12 @@ async function submitLead(formElement, extraData = {}) {
     showMessage(formElement, success, "success");
     showToast(success);
     formElement.reset();
+    resetUploadPreview(formElement);
     if (formElement.closest(".dcn-modal")) window.setTimeout(closeModal, 1000);
     return true;
   } catch (error) {
     console.error("[DecorNow submit]", error);
-    const failure = "Chưa thể gửi thông tin. Anh/chị vui lòng thử lại hoặc gọi 0865 898 247.";
+    const failure = "Chưa thể gửi thông tin. Anh/chị vui lòng thử lại hoặc gọi 032 888 9398.";
     showMessage(formElement, failure, "error");
     showToast(failure, true);
     return false;
@@ -313,6 +419,16 @@ function initInteractions() {
   menuButton?.addEventListener("click", () => { const open = nav?.classList.toggle("is-open"); menuButton.setAttribute("aria-expanded", String(Boolean(open))); });
   nav?.querySelectorAll("a").forEach(link => link.addEventListener("click", () => { nav.classList.remove("is-open"); menuButton?.setAttribute("aria-expanded", "false"); }));
 
+  document.querySelectorAll(".dcn-feedback-video").forEach(video => {
+    let playTracked = false;
+    video.addEventListener("play", () => {
+      if (playTracked) return;
+      playTracked = true;
+      trackEvent("Play_Feedback_Video", { source_section: "feedback", duration: Math.round(video.duration || 48) });
+    });
+    video.addEventListener("ended", () => trackEvent("Complete_Feedback_Video", { source_section: "feedback" }));
+  });
+
   document.querySelectorAll(".dcn-question").forEach(question => question.addEventListener("change", event => {
     const input = event.target.closest("input");
     if (!input) return;
@@ -328,6 +444,40 @@ function initInteractions() {
   }));
 
   document.addEventListener("click", event => {
+    const concernToggle = event.target.closest(".dcn-concern__toggle");
+    if (concernToggle) {
+      const article = concernToggle.closest("article");
+      const willOpen = !article?.classList.contains("is-open");
+      article?.classList.toggle("is-open", willOpen);
+      concernToggle.setAttribute("aria-expanded", String(willOpen));
+      const allCards = [...document.querySelectorAll(".dcn-concerns article")];
+      const allOpen = allCards.length > 0 && allCards.every(item => item.classList.contains("is-open"));
+      const allButton = document.querySelector(".dcn-concern-all");
+      allButton?.setAttribute("aria-expanded", String(allOpen));
+      const label = allButton?.querySelector("b");
+      if (label) label.textContent = allOpen ? "Thu gọn tất cả" : "Xem tất cả giải pháp";
+      return;
+    }
+    const concernAll = event.target.closest(".dcn-concern-all");
+    if (concernAll) {
+      const openAll = concernAll.getAttribute("aria-expanded") !== "true";
+      document.querySelectorAll(".dcn-concerns article").forEach(article => {
+        article.classList.toggle("is-open", openAll);
+        article.querySelector(".dcn-concern__toggle")?.setAttribute("aria-expanded", String(openAll));
+      });
+      concernAll.setAttribute("aria-expanded", String(openAll));
+      const label = concernAll.querySelector("b");
+      if (label) label.textContent = openAll ? "Thu gọn tất cả" : "Xem tất cả giải pháp";
+      return;
+    }
+    const removeUpload = event.target.closest(".dcn-upload__remove");
+    if (removeUpload) {
+      const form = removeUpload.closest("form");
+      const input = form?.querySelector('[name="altar_image"]');
+      if (input) input.value = "";
+      if (form) resetUploadPreview(form);
+      return;
+    }
     const quizResultButton = event.target.closest(".quiz-result-trigger");
     if (quizResultButton) {
       trackEvent("Click_Quiz_Start", { source: "quiz_cta" });
@@ -363,7 +513,7 @@ function initInteractions() {
       if (consultButton.getAttribute("href") === "#chon-tranh") return;
       openModal(null, consultButton.dataset.title || "Nhận tư vấn chọn tranh");
     }
-    if (event.target.closest(".track-hotline")) trackEvent("Click_Hotline", { phone: "0865898247" });
+    if (event.target.closest(".track-hotline")) trackEvent("Click_Hotline", { phone: "0328889398" });
     if (event.target.closest("[data-zalo]")) trackEvent("Click_Zalo");
     if (event.target.closest("[data-close-modal]")) closeModal();
     if (event.target.closest("[data-close-quiz-results]")) closeQuizResultsModal();
@@ -374,6 +524,20 @@ function initInteractions() {
     const clicked = event.submitter?.dataset.cta || "submit_form";
     submitLead(form, { source_section: form.dataset.source, clicked_cta: clicked });
   }));
+  document.querySelectorAll('[name="altar_image"]').forEach(input => input.addEventListener("change", () => updateUploadPreview(input)));
+  document.querySelectorAll(".dcn-upload__drop").forEach(drop => {
+    ["dragenter", "dragover"].forEach(type => drop.addEventListener(type, event => { event.preventDefault(); drop.classList.add("is-dragging"); }));
+    ["dragleave", "drop"].forEach(type => drop.addEventListener(type, event => { event.preventDefault(); drop.classList.remove("is-dragging"); }));
+    drop.addEventListener("drop", event => {
+      const input = drop.closest(".dcn-upload")?.querySelector('input[type="file"]');
+      const file = event.dataTransfer?.files?.[0];
+      if (!input || !file) return;
+      const transfer = new DataTransfer();
+      transfer.items.add(file);
+      input.files = transfer.files;
+      updateUploadPreview(input);
+    });
+  });
   document.addEventListener("keydown", event => { if (event.key === "Escape") { closeModal(); closeQuizResultsModal(); } });
   window.addEventListener("scroll", () => {
     const maxScroll = document.documentElement.scrollHeight - window.innerHeight;
@@ -383,7 +547,9 @@ function initInteractions() {
 
 document.addEventListener("DOMContentLoaded", () => {
   renderProducts();
+  initConcerns();
   initInteractions();
+  initCountdown();
   trackEvent("PageView", { ...getUTMParams(), device_type: getDeviceInfo().device_type });
 });
 
