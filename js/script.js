@@ -1,8 +1,12 @@
 const CONFIG = {
-  WEBHOOK_URL: "",
+  WEBHOOK_URL: "https://decornowglobal.sg.larksuite.com/base/automation/webhook/event/L4cwaA8EzwoKJbhrDCgluRohgog",
+  // === Dán ID Pixel thật vào đây khi sẵn sàng chạy quảng cáo ===
   META_PIXEL_ENABLED: true,
+  META_PIXEL_ID: "",        // Meta Pixel ID, vd: "1234567890123456"
   GA4_ENABLED: true,
-  TIKTOK_PIXEL_ENABLED: true
+  GA4_ID: "",               // GA4 Measurement ID, vd: "G-XXXXXXXXXX"
+  TIKTOK_PIXEL_ENABLED: true,
+  TIKTOK_PIXEL_ID: ""       // TikTok Pixel ID, vd: "CabcXYZ123..."
 };
 
 const products = [
@@ -104,6 +108,9 @@ function collectLeadData(formElement, extraData = {}) {
   const utm = getUTMParams();
   const device = getDeviceInfo();
   return {
+    // lead_id + submitted_at để khớp 2 cột đã map sẵn trong automation Larkbase.
+    lead_id: `lead_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+    submitted_at: new Date().toISOString(),
     full_name: String(form.get("full_name") || "").trim(),
     phone: String(form.get("phone") || "").trim(),
     worship_type: String(form.get("worship_type") || quizState.worship_type || ""),
@@ -261,8 +268,11 @@ async function submitLead(formElement, extraData = {}) {
     const altarImage = await prepareAltarImage(formElement);
     if (altarImage) data.altar_image = altarImage;
     if (CONFIG.WEBHOOK_URL) {
-      const response = await fetch(CONFIG.WEBHOOK_URL, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data) });
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      // Webhook Lark không trả CORS header cho JS trình duyệt nên dùng no-cors + text/plain
+      // để tránh preflight. Response là opaque (không đọc được status), coi như đã gửi nếu
+      // không có lỗi mạng. Nếu sau này đổi sang webhook trung gian có CORS, có thể khôi phục
+      // kiểm tra response.ok.
+      await fetch(CONFIG.WEBHOOK_URL, { method: "POST", mode: "no-cors", headers: { "Content-Type": "text/plain" }, body: JSON.stringify(data) });
     } else {
       console.log("[DecorNow lead - local test]", data);
       await new Promise(resolve => window.setTimeout(resolve, 350));
@@ -545,7 +555,40 @@ function initInteractions() {
   }, { passive: true });
 }
 
+// Nạp các Pixel quảng cáo. Chỉ nạp pixel nào có ID trong CONFIG (bật cờ + có ID).
+// Các loader chỉ init, KHÔNG bắn PageView; PageView được bắn 1 lần duy nhất qua
+// trackEvent("PageView") bên dưới để tránh đếm trùng (quan trọng với Meta).
+function initPixels() {
+  // Meta Pixel
+  if (CONFIG.META_PIXEL_ENABLED && CONFIG.META_PIXEL_ID) {
+    try {
+      !function(f,b,e,v,n,t,s){if(f.fbq)return;n=f.fbq=function(){n.callMethod?n.callMethod.apply(n,arguments):n.queue.push(arguments)};if(!f._fbq)f._fbq=n;n.push=n;n.loaded=!0;n.version='2.0';n.queue=[];t=b.createElement(e);t.async=!0;t.src=v;s=b.getElementsByTagName(e)[0];s.parentNode.insertBefore(t,s)}(window,document,'script','https://connect.facebook.net/en_US/fbevents.js');
+      window.fbq('init', CONFIG.META_PIXEL_ID);
+    } catch (e) { console.warn("[Pixel] Meta init lỗi", e); }
+  }
+  // Google Analytics 4 (gtag). send_page_view:false để trackEvent lo PageView, tránh đếm trùng.
+  if (CONFIG.GA4_ENABLED && CONFIG.GA4_ID) {
+    try {
+      var gs = document.createElement("script");
+      gs.async = true;
+      gs.src = "https://www.googletagmanager.com/gtag/js?id=" + CONFIG.GA4_ID;
+      document.head.appendChild(gs);
+      window.dataLayer = window.dataLayer || [];
+      window.gtag = function () { window.dataLayer.push(arguments); };
+      window.gtag("js", new Date());
+      window.gtag("config", CONFIG.GA4_ID, { send_page_view: false });
+    } catch (e) { console.warn("[Pixel] GA4 init lỗi", e); }
+  }
+  // TikTok Pixel
+  if (CONFIG.TIKTOK_PIXEL_ENABLED && CONFIG.TIKTOK_PIXEL_ID) {
+    try {
+      !function(w,d,t){w.TiktokAnalyticsObject=t;var ttq=w[t]=w[t]||[];ttq.methods=["page","track","identify","instances","debug","on","off","once","ready","alias","group","enableCookie","disableCookie","holdConsent","revokeConsent","grantConsent"];ttq.setAndDefer=function(t,e){t[e]=function(){t.push([e].concat(Array.prototype.slice.call(arguments,0)))}};for(var i=0;i<ttq.methods.length;i++)ttq.setAndDefer(ttq,ttq.methods[i]);ttq.instance=function(t){for(var e=ttq._i[t]||[],n=0;n<ttq.methods.length;n++)ttq.setAndDefer(e,ttq.methods[n]);return e};ttq.load=function(e,n){var r="https://analytics.tiktok.com/i18n/pixel/events.js",o=n&&n.partner;ttq._i=ttq._i||{},ttq._i[e]=[],ttq._i[e]._u=r,ttq._t=ttq._t||{},ttq._t[e]=+new Date,ttq._o=ttq._o||{},ttq._o[e]=n||{};var s=d.createElement("script");s.type="text/javascript",s.async=!0,s.src=r+"?sdkid="+e+"&lib="+t;var a=d.getElementsByTagName("script")[0];a.parentNode.insertBefore(s,a)};ttq.load(CONFIG.TIKTOK_PIXEL_ID)}(window,document,'ttq');
+    } catch (e) { console.warn("[Pixel] TikTok init lỗi", e); }
+  }
+}
+
 document.addEventListener("DOMContentLoaded", () => {
+  initPixels();
   renderProducts();
   initConcerns();
   initInteractions();
@@ -554,4 +597,4 @@ document.addEventListener("DOMContentLoaded", () => {
 });
 
 // Expose integration helpers for later WordPress/webhook setup.
-window.DecorNow = { CONFIG, trackEvent, getUTMParams, getDeviceInfo, collectLeadData, submitLead };
+window.DecorNow = { CONFIG, trackEvent, getUTMParams, getDeviceInfo, collectLeadData, submitLead, initPixels };
