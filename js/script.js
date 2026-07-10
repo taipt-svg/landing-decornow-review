@@ -227,18 +227,15 @@ function initCountdown() {
   const minutes = document.getElementById("countdown-minutes");
   const seconds = document.getElementById("countdown-seconds");
   if (!hours || !minutes || !seconds) return;
-  const key = "dcn_offer_deadline";
-  let deadline = Number(localStorage.getItem(key));
-  if (!deadline || deadline <= Date.now()) {
-    deadline = Date.now() + 6 * 60 * 60 * 1000;
-    localStorage.setItem(key, String(deadline));
-  }
+  // Đếm ngược tới cuối ngày (23:59:59): giống nhau cho mọi khách, tự reset mỗi ngày —
+  // tránh urgency giả kiểu reset 6 giờ theo từng lượt truy cập.
   const update = () => {
-    const remaining = Math.max(0, deadline - Date.now());
+    const now = new Date();
+    const end = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59);
+    const remaining = Math.max(0, end.getTime() - now.getTime());
     hours.textContent = String(Math.floor(remaining / 3600000)).padStart(2, "0");
     minutes.textContent = String(Math.floor(remaining % 3600000 / 60000)).padStart(2, "0");
     seconds.textContent = String(Math.floor(remaining % 60000 / 1000)).padStart(2, "0");
-    if (remaining <= 0) window.clearInterval(initCountdown.timer);
   };
   update();
   initCountdown.timer = window.setInterval(update, 1000);
@@ -299,7 +296,16 @@ async function submitLead(formElement, extraData = {}) {
 function renderProducts() {
   const grid = document.getElementById("product-grid");
   if (!grid) return;
-  grid.innerHTML = products.map((product, index) => `<article class="dcn-product"><div class="dcn-product__image"><img src="images/products/${product.code}.png" alt="${product.name} ${product.code}" loading="lazy"><span>${product.code}</span></div><div class="dcn-product__body"><h3>${product.name}</h3><p>${product.desc}</p><small>Bảo hành khung 2 năm · đèn 1 năm</small><button class="dcn-btn dcn-btn--gold product-trigger" type="button" data-index="${index}">Xem chi tiết</button></div></article>`).join("");
+  grid.innerHTML = products.map((product, index) => `<article class="dcn-product${index >= 6 ? " is-extra" : ""}"${index >= 6 ? " hidden" : ""}><div class="dcn-product__image"><img src="images/products/${product.code}.png" alt="${product.name} ${product.code}" loading="lazy"><span>${product.code}</span></div><div class="dcn-product__body"><h3>${product.name}</h3><p>${product.desc}</p><small>Bảo hành khung 2 năm · đèn 1 năm</small><button class="dcn-btn dcn-btn--gold product-trigger" type="button" data-index="${index}">Xem chi tiết</button></div></article>`).join("");
+  // Nút "Xem thêm": bỏ ẩn các mẫu phụ (chỉ tác dụng trên mobile/tablet; desktop hiện sẵn).
+  const reveal = document.getElementById("revealProducts");
+  if (reveal) {
+    reveal.addEventListener("click", () => {
+      grid.querySelectorAll(".dcn-product.is-extra").forEach(el => el.removeAttribute("hidden"));
+      const wrap = reveal.closest(".dcn-products-reveal");
+      if (wrap) wrap.style.display = "none";
+    });
+  }
 }
 
 function populateModalForm(product = null) {
@@ -429,15 +435,29 @@ function initInteractions() {
   menuButton?.addEventListener("click", () => { const open = nav?.classList.toggle("is-open"); menuButton.setAttribute("aria-expanded", String(Boolean(open))); });
   nav?.querySelectorAll("a").forEach(link => link.addEventListener("click", () => { nav.classList.remove("is-open"); menuButton?.setAttribute("aria-expanded", "false"); }));
 
-  document.querySelectorAll(".dcn-feedback-video").forEach(video => {
-    let playTracked = false;
-    video.addEventListener("play", () => {
-      if (playTracked) return;
-      playTracked = true;
-      trackEvent("Play_Feedback_Video", { source_section: "feedback", duration: Math.round(video.duration || 48) });
+  // Video feedback nạp lười: chỉ tải file 28MB khi khách bấm phát (nhẹ trang, đỡ tụt khách).
+  const videoPoster = document.getElementById("feedbackVideoPoster");
+  if (videoPoster) {
+    videoPoster.addEventListener("click", () => {
+      const video = document.createElement("video");
+      video.className = "dcn-feedback-video";
+      video.controls = true;
+      video.autoplay = true;
+      video.playsInline = true;
+      video.preload = "auto";
+      video.src = videoPoster.dataset.videoSrc;
+      let playTracked = false;
+      video.addEventListener("play", () => {
+        if (playTracked) return;
+        playTracked = true;
+        trackEvent("Play_Feedback_Video", { source_section: "feedback", duration: Math.round(video.duration || 48) });
+      });
+      video.addEventListener("ended", () => trackEvent("Complete_Feedback_Video", { source_section: "feedback" }));
+      videoPoster.replaceWith(video);
+      const p = video.play();
+      if (p && p.catch) p.catch(() => {});
     });
-    video.addEventListener("ended", () => trackEvent("Complete_Feedback_Video", { source_section: "feedback" }));
-  });
+  }
 
   document.querySelectorAll(".dcn-question").forEach(question => question.addEventListener("change", event => {
     const input = event.target.closest("input");
@@ -478,6 +498,14 @@ function initInteractions() {
       concernAll.setAttribute("aria-expanded", String(openAll));
       const label = concernAll.querySelector("b");
       if (label) label.textContent = openAll ? "Thu gọn tất cả" : "Xem tất cả giải pháp";
+      return;
+    }
+    const moreToggle = event.target.closest(".dcn-form__more-toggle");
+    if (moreToggle) {
+      const moreBox = document.getElementById(moreToggle.getAttribute("aria-controls"));
+      const willOpen = moreToggle.getAttribute("aria-expanded") !== "true";
+      moreToggle.setAttribute("aria-expanded", String(willOpen));
+      if (moreBox) moreBox.hidden = !willOpen;
       return;
     }
     const removeUpload = event.target.closest(".dcn-upload__remove");

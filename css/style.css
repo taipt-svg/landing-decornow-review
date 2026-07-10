@@ -98,3 +98,36 @@ html{scroll-behavior:smooth}body{margin:0}
 .dcn-feedback-divider::after{background:linear-gradient(90deg,rgba(231,197,127,.45),transparent)}
 @media(min-width:768px){.dcn-featured-feedback{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(290px,.65fr);align-items:stretch;margin-bottom:30px}.dcn-feedback-video{height:100%;min-height:330px;aspect-ratio:auto}.dcn-featured-feedback__copy{display:flex;flex-direction:column;justify-content:center;padding:28px}.dcn-feedback-divider{margin-bottom:18px}}
 @media(max-width:767px){.dcn-featured-feedback{border-radius:14px}.dcn-feedback-video{max-height:70vh}.dcn-featured-feedback__copy{padding:17px}.dcn-featured-feedback__badge{top:9px;left:9px}.dcn-feedback-divider span{max-width:220px}}
+
+/* ===== Cải thiện tỷ lệ chuyển đổi (CRO) ===== */
+/* Strip ưu đãi ở hero + cạnh quiz */
+.dcn-hero__offer{margin:10px 0 0;padding:7px 12px;display:inline-block;background:rgba(200,139,40,.16);border:1px solid rgba(242,198,107,.55);border-radius:999px;color:#ffe6b0;font-size:11px;line-height:1.35}
+.dcn-hero__offer b{color:#ffd77a}
+.dcn-offer-echo{margin:12px auto 0;max-width:560px;padding:10px 14px;display:flex;align-items:center;justify-content:center;gap:8px;text-align:center;background:#fff6e4;border:1px dashed #dcb163;border-radius:12px;color:#7a4f14;font-size:12px;line-height:1.4}
+.dcn-offer-echo b{color:#9b651c}
+@media(min-width:768px){.dcn-hero__offer{font-size:13px}}
+/* Form: cụm trường tùy chọn thu gọn */
+.dcn-form__more-toggle{margin:2px 0 0;padding:8px 4px;background:none;border:0;color:#9b651c;font:700 12px/1.3 var(--dcn-font-body);cursor:pointer;text-align:left;display:inline-flex;align-items:center;gap:6px}
+.dcn-form__more-toggle:hover{text-decoration:underline}
+.dcn-form__more-toggle::after{content:"▾";font-size:11px}
+.dcn-form__more-toggle[aria-expanded="true"]::after{content:"▴"}
+.dcn-form__more{display:grid;gap:10px}
+.dcn-form__more[hidden]{display:none}
+/* Video click-to-play: nhẹ trang, không tải 28MB tới khi bấm */
+.dcn-video-poster{position:relative;display:block;width:100%;border:0;padding:0;cursor:pointer;background:#090503;overflow:hidden}
+.dcn-video-poster img{width:100%;display:block;aspect-ratio:16/9;object-fit:cover}
+.dcn-video-poster__play{position:absolute;left:50%;top:50%;translate:-50% -50%;width:64px;height:64px;border-radius:50%;background:rgba(255,255,255,.92);color:#9b661d;display:grid;place-items:center;font-size:26px;box-shadow:0 8px 24px rgba(0,0,0,.35)}
+.dcn-video-poster__label{position:absolute;left:0;right:0;bottom:0;padding:10px 12px;background:linear-gradient(transparent,rgba(0,0,0,.75));color:#fff;font-size:12px;font-weight:700;text-align:center}
+/* Thanh niềm tin KOL/số liệu */
+.dcn-trust-bar{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:18px 0 6px}
+.dcn-trust-bar .dcn-trust-stat{text-align:center;padding:12px 6px;border:1px solid rgba(242,198,107,.32);border-radius:12px;background:rgba(255,255,255,.05)}
+.dcn-trust-bar .dcn-trust-stat b{display:block;color:#f2c66b;font:800 20px/1 var(--dcn-font-display)}
+.dcn-trust-bar .dcn-trust-stat span{font-size:10.5px;color:#d8c4aa}
+.dcn-kol-logos{display:flex;flex-wrap:wrap;justify-content:center;gap:10px;margin:12px auto 0}
+.dcn-kol-logos figure{margin:0;width:78px;text-align:center}
+.dcn-kol-logos .dcn-kol-ph{width:60px;height:60px;margin:0 auto 5px;border-radius:50%;background:rgba(255,255,255,.08);border:1px dashed rgba(242,198,107,.5);display:grid;place-items:center;color:#e7c57f;font-size:9px;padding:4px;line-height:1.15}
+.dcn-kol-logos figcaption{font-size:9.5px;color:#dcc7a6;line-height:1.25}
+/* Nút xem thêm sản phẩm */
+.dcn-product.is-extra[hidden]{display:none}
+.dcn-products-reveal{margin-top:14px}
+@media(min-width:1024px){.dcn-product.is-extra[hidden]{display:flex}.dcn-products-reveal{display:none}}
